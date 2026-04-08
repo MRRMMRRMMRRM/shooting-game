@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2Dシューティングゲーム</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+    color: #fff;
+    user-select: none;
+  }
+  #hud {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 12px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  #hud span { color: #ffd700; }
+  canvas {
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: crosshair;
+    display: block;
+  }
+  #overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.82);
+    border: 2px solid #ffd700;
+    border-radius: 12px;
+    padding: 36px 52px;
+    text-align: center;
+    display: none;
+    z-index: 10;
+  }
+  #overlay h2 { font-size: 36px; margin-bottom: 12px; }
+  #overlay p  { font-size: 16px; color: #ccc; margin-bottom: 24px; line-height: 1.6; }
+  #overlay button {
+    background: #ffd700;
+    color: #1a1a2e;
+    border: none;
+    padding: 12px 36px;
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  #overlay button:hover { background: #ffec6e; }
+  #wrapper { position: relative; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div>ステージ <span id="stageNum">1</span></div>
+  <div>敵 <span id="enemyCount">0</span></div>
+  <div>残り <span id="timeLeft">60</span>秒</div>
+</div>
+
+<div id="wrapper">
+  <canvas id="c" width="900" height="550"></canvas>
+  <div id="overlay">
+    <h2 id="overlayTitle"></h2>
+    <p id="overlayMsg"></p>
+    <button id="overlayBtn">スタート</button>
+  </div>
+</div>
+
+<p style="margin-top:10px;font-size:13px;color:#888;">WASD / 矢印キー：移動　マウス：照準　クリック：ビーム発射</p>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlayMsg   = document.getElementById('overlayMsg');
+const overlayBtn   = document.getElementById('overlayBtn');
+const hudStage = document.getElementById('stageNum');
+const hudEnemy = document.getElementById('enemyCount');
+const hudTime  = document.getElementById('timeLeft');
+
+/* ─── ステージ定義 ─── */
+const STAGES = [
+  { // 1
+    timeLimit: 10,
+    enemies: [
+      {x:200,y:120,vx:2,vy:1.5},
+      {x:500,y:300,vx:-1.8,vy:2},
+    ],
+    blocks: [
+      {x:350,y:80,w:60,h:60},
+      {x:600,y:200,w:60,h:60},
+      {x:250,y:350,w:60,h:60},
+      {x:500,y:420,w:60,h:60},
+    ]
+  },
+  { // 2
+    timeLimit: 10,
+    enemies: [
+      {x:150,y:150,vx:2.5,vy:2},
+      {x:600,y:100,vx:-2,vy:2.5},
+      {x:400,y:400,vx:2,vy:-2},
+    ],
+    blocks: [
+      {x:200,y:200,w:60,h:60},
+      {x:450,y:150,w:60,h:60},
+      {x:650,y:350,w:60,h:60},
+      {x:350,y:300,w:60,h:60},
+      {x:150,y:400,w:60,h:60},
+    ]
+  },
+  { // 3
+    timeLimit: 10,
+    enemies: [
+      {x:100,y:100,vx:3,vy:2},
+      {x:700,y:100,vx:-2.5,vy:2.5},
+      {x:400,y:250,vx:2,vy:-3},
+      {x:300,y:450,vx:-2,vy:2},
+    ],
+    blocks: [
+      {x:300,y:100,w:60,h:60},
+      {x:550,y:200,w:60,h:60},
+      {x:200,y:300,w:60,h:60},
+      {x:600,y:380,w:60,h:60},
+      {x:400,y:420,w:60,h:60},
+      {x:150,y:180,w:60,h:60},
+    ]
+  },
+  { // 4
+    timeLimit: 10,
+    enemies: [
+      {x:200,y:150,vx:3,vy:-2.5},
+      {x:650,y:200,vx:-3,vy:2},
+      {x:400,y:350,vx:2.5,vy:3},
+      {x:200,y:400,vx:-2,vy:-3},
+    ],
+    blocks: [
+      {x:420,y:120,w:60,h:60},
+      {x:200,y:250,w:60,h:60},
+      {x:600,y:300,w:60,h:60},
+      {x:350,y:380,w:60,h:60},
+      {x:120,y:350,w:60,h:60},
+      {x:650,y:150,w:60,h:60},
+      {x:420,y:280,w:60,h:60},
+    ]
+  },
+  { // 5
+    timeLimit: 10,
+    enemies: [
+      {x:150,y:100,vx:3.5,vy:2},
+      {x:700,y:150,vx:-3,vy:2.5},
+      {x:400,y:200,vx:2,vy:-3.5},
+      {x:200,y:400,vx:-2.5,vy:3},
+      {x:600,y:420,vx:3,vy:-2},
+    ],
+    blocks: [
+      {x:300,y:150,w:60,h:60},
+      {x:550,y:100,w:60,h:60},
+      {x:150,y:280,w:60,h:60},
+      {x:680,y:280,w:60,h:60},
+      {x:400,y:300,w:60,h:60},
+      {x:280,y:400,w:60,h:60},
+      {x:560,y:380,w:60,h:60},
+    ]
+  },
+  { // 6
+    timeLimit: 10,
+    enemies: [
+      {x:120,y:120,vx:4,vy:2.5},
+      {x:750,y:120,vx:-3.5,vy:3},
+      {x:120,y:430,vx:3,vy:-4},
+      {x:750,y:430,vx:-4,vy:-2.5},
+      {x:430,y:270,vx:3,vy:3},
+    ],
+    blocks: [
+      {x:350,y:80,w:60,h:60},
+      {x:200,y:180,w:60,h:60},
+      {x:600,y:180,w:60,h:60},
+      {x:120,y:300,w:60,h:60},
+      {x:700,y:300,w:60,h:60},
+      {x:350,y:350,w:60,h:60},
+      {x:500,y:430,w:60,h:60},
+      {x:200,y:430,w:60,h:60},
+    ]
+  },
+  { // 7
+    timeLimit: 10,
+    enemies: [
+      {x:150,y:130,vx:4,vy:3},
+      {x:700,y:130,vx:-4,vy:2.5},
+      {x:150,y:420,vx:3.5,vy:-4},
+      {x:700,y:420,vx:-3,vy:-4},
+      {x:430,y:150,vx:4,vy:4},
+      {x:430,y:420,vx:-4,vy:-3},
+    ],
+    blocks: [
+      {x:280,y:120,w:60,h:60},
+      {x:560,y:120,w:60,h:60},
+      {x:150,y:250,w:60,h:60},
+      {x:700,y:250,w:60,h:60},
+      {x:420,y:250,w:60,h:60},
+      {x:280,y:380,w:60,h:60},
+      {x:560,y:380,w:60,h:60},
+    ]
+  },
+  { // 8
+    timeLimit: 10,
+    enemies: [
+      {x:150,y:100,vx:4.5,vy:3},
+      {x:700,y:100,vx:-4,vy:3.5},
+      {x:150,y:450,vx:3.5,vy:-4.5},
+      {x:700,y:450,vx:-4.5,vy:-3},
+      {x:430,y:100,vx:3,vy:4.5},
+      {x:430,y:450,vx:-3.5,vy:-4},
+      {x:200,y:280,vx:4,vy:-3},
+    ],
+    blocks: [
+      {x:320,y:100,w:60,h:60},
+      {x:560,y:200,w:60,h:60},
+      {x:150,y:220,w:60,h:60},
+      {x:680,y:350,w:60,h:60},
+      {x:420,y:300,w:60,h:60},
+      {x:200,y:400,w:60,h:60},
+      {x:560,y:400,w:60,h:60},
+      {x:320,y:430,w:60,h:60},
+    ]
+  },
+  { // 9
+    timeLimit: 10,
+    enemies: [
+      {x:120,y:120,vx:5,vy:3},
+      {x:760,y:120,vx:-4.5,vy:3.5},
+      {x:120,y:430,vx:4,vy:-5},
+      {x:760,y:430,vx:-5,vy:-3.5},
+      {x:440,y:120,vx:3.5,vy:5},
+      {x:440,y:430,vx:-4,vy:-4.5},
+      {x:200,y:270,vx:4.5,vy:-3},
+      {x:680,y:270,vx:-3.5,vy:4},
+    ],
+    blocks: [
+      {x:300,y:120,w:60,h:60},
+      {x:580,y:120,w:60,h:60},
+      {x:150,y:230,w:60,h:60},
+      {x:700,y:230,w:60,h:60},
+      {x:420,y:230,w:60,h:60},
+      {x:150,y:370,w:60,h:60},
+      {x:700,y:370,w:60,h:60},
+      {x:300,y:400,w:60,h:60},
+      {x:580,y:400,w:60,h:60},
+    ]
+  },
+  { // 10
+    timeLimit: 10,
+    enemies: [
+      {x:120,y:100,vx:5,vy:3.5},
+      {x:760,y:100,vx:-5,vy:3},
+      {x:120,y:450,vx:4.5,vy:-5},
+      {x:760,y:450,vx:-4.5,vy:-4.5},
+      {x:440,y:100,vx:3.5,vy:5},
+      {x:440,y:450,vx:-5,vy:-3.5},
+      {x:120,y:270,vx:5,vy:-3},
+      {x:760,y:270,vx:-4,vy:5},
+      {x:440,y:270,vx:4,vy:-4},
+    ],
+    blocks: [
+      {x:280,y:100,w:60,h:60},
+      {x:560,y:100,w:60,h:60},
+      {x:140,y:200,w:60,h:60},
+      {x:700,y:200,w:60,h:60},
+      {x:420,y:200,w:60,h:60},
+      {x:280,y:310,w:60,h:60},
+      {x:560,y:310,w:60,h:60},
+      {x:140,y:400,w:60,h:60},
+      {x:700,y:400,w:60,h:60},
+      {x:420,y:400,w:60,h:60},
+    ]
+  },
+];
+
+/* ─── ゲーム状態 ─── */
+let stage = 0;
+let state = 'title'; // title | playing | clear | over
+let player, enemies, blocks, beams;
+let keys = {};
+let mouseX = W/2, mouseY = H/2;
+let timeLeft, timerInterval;
+let animId;
+
+/* ─── 定数 ─── */
+const PLAYER_SPEED = 4;
+const PLAYER_R     = 16;
+const ENEMY_R      = 20;
+const BEAM_SPEED   = 12;
+const BEAM_LEN     = 28;
+const BS = 40; // 外枠ブロックのサイズ（正方形）
+
+/* 外枠：消えるブロックを端に敷き詰める */
+function makeBorderBlocks() {
+  const out = [];
+  const cols = Math.floor(W / BS);
+  const rows = Math.floor(H / BS);
+  for(let c=0; c<cols; c++) {
+    out.push({x: c*BS, y: 0,          w: BS, h: BS, alive: true}); // 上辺
+    out.push({x: c*BS, y: H-BS,       w: BS, h: BS, alive: true}); // 下辺
+  }
+  for(let r=1; r<rows-1; r++) {
+    out.push({x: 0,    y: r*BS,       w: BS, h: BS, alive: true}); // 左辺
+    out.push({x: W-BS, y: r*BS,       w: BS, h: BS, alive: true}); // 右辺
+  }
+  return out;
+}
+
+/* ─── 初期化 ─── */
+function initStage(s) {
+  const def = STAGES[s];
+  player = { x: BS*2, y: BS*2, angle: 0 };
+  enemies = def.enemies.map(e => ({...e}));
+  blocks  = [
+    ...makeBorderBlocks(),
+    ...def.blocks.map(b => ({...b, alive:true}))
+  ];
+  beams   = [];
+  timeLeft = def.timeLimit;
+  hudStage.textContent = s + 1;
+  updateHUD();
+}
+
+function updateHUD() {
+  hudEnemy.textContent = enemies.filter(e=>e.alive!==false).length;
+  hudTime.textContent  = timeLeft;
+}
+
+/* ─── タイマー ─── */
+function startTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(()=>{
+    if(state !== 'playing') return;
+    timeLeft--;
+    hudTime.textContent = timeLeft;
+    if(timeLeft <= 0) triggerGameOver('時間切れ！');
+  }, 1000);
+}
+
+/* ─── 入力 ─── */
+document.addEventListener('keydown', e => { keys[e.key] = true; });
+document.addEventListener('keyup',   e => { keys[e.key] = false; });
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouseX = e.clientX - r.left;
+  mouseY = e.clientY - r.top;
+});
+canvas.addEventListener('click', () => {
+  if(state !== 'playing') return;
+  fireBeam();
+});
+
+function fireBeam() {
+  const angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+  beams.push({
+    x: player.x + Math.cos(angle)*(PLAYER_R+2),
+    y: player.y + Math.sin(angle)*(PLAYER_R+2),
+    vx: Math.cos(angle)*BEAM_SPEED,
+    vy: Math.sin(angle)*BEAM_SPEED,
+    angle,
+    alive: true
+  });
+}
+
+/* ─── 更新 ─── */
+function update() {
+  if(state !== 'playing') return;
+
+  /* プレイヤー移動 */
+  if((keys['w']||keys['W']||keys['ArrowUp'])    && player.y > PLAYER_R) player.y -= PLAYER_SPEED;
+  if((keys['s']||keys['S']||keys['ArrowDown'])  && player.y < H-PLAYER_R) player.y += PLAYER_SPEED;
+  if((keys['a']||keys['A']||keys['ArrowLeft'])  && player.x > PLAYER_R) player.x -= PLAYER_SPEED;
+  if((keys['d']||keys['D']||keys['ArrowRight']) && player.x < W-PLAYER_R) player.x += PLAYER_SPEED;
+  player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+
+  /* ブロックとのめり込み補正（プレイヤー） */
+  for(const b of blocks) {
+    if(!b.alive) continue;
+    resolveCircleRect(player, PLAYER_R, b);
+  }
+
+  /* ビーム更新 */
+  for(const beam of beams) {
+    if(!beam.alive) continue;
+    beam.x += beam.vx;
+    beam.y += beam.vy;
+    if(beam.x<0||beam.x>W||beam.y<0||beam.y>H) { beam.alive=false; continue; }
+
+    /* ビームとブロック */
+    for(const b of blocks) {
+      if(!b.alive) continue;
+      if(rectContains(b, beam.x, beam.y)) {
+        b.alive = false;
+        beam.alive = false;
+        break;
+      }
+    }
+    if(!beam.alive) continue;
+
+    /* ビームと敵 */
+    for(const e of enemies) {
+      if(e.alive===false) continue;
+      const dx = beam.x - e.x, dy = beam.y - e.y;
+      if(dx*dx+dy*dy < ENEMY_R*ENEMY_R) {
+        e.alive = false;
+        beam.alive = false;
+        break;
+      }
+    }
+  }
+  beams = beams.filter(b=>b.alive);
+
+  /* 敵更新 */
+  for(const e of enemies) {
+    if(e.alive===false) continue;
+    e.x += e.vx;
+    e.y += e.vy;
+
+    /* ブロックバウンス */
+    for(const b of blocks) {
+      if(!b.alive) continue;
+      bounceCircleRect(e, ENEMY_R, b);
+    }
+
+    /* 画面外チェック（念のため） */
+    if(e.x<-ENEMY_R||e.x>W+ENEMY_R||e.y<-ENEMY_R||e.y>H+ENEMY_R) {
+      triggerGameOver('敵が画面外に出た！');
+      return;
+    }
+
+    /* プレイヤーへの衝突チェック */
+    const pdx = e.x - player.x, pdy = e.y - player.y;
+    if(pdx*pdx+pdy*pdy < (ENEMY_R+PLAYER_R)*(ENEMY_R+PLAYER_R)) {
+      triggerGameOver('敵にやられた！');
+      return;
+    }
+  }
+
+  /* クリア判定 */
+  if(enemies.every(e=>e.alive===false)) {
+    clearInterval(timerInterval);
+    if(stage+1 < STAGES.length) {
+      stage++;
+      initStage(stage);  // 次ステージを先に読み込んで背景に表示
+      hudStage.textContent = stage + 1;
+      showOverlay('ステージクリア！', `次のステージへ進みます。\nステージ ${stage+1} 開始！`, 'ステージ ' + (stage+1));
+      state = 'clear';
+    } else {
+      showOverlay('ゲームクリア！', '全ステージを制覇しました！\nおめでとうございます！', 'もう一度遊ぶ');
+      state = 'clear';
+    }
+  }
+
+  updateHUD();
+}
+
+/* ─── 当たり判定ユーティリティ ─── */
+function rectContains(b, x, y) {
+  return x >= b.x && x <= b.x+b.w && y >= b.y && y <= b.y+b.h;
+}
+
+function resolveCircleRect(obj, r, b) {
+  const cx = obj.x, cy = obj.y;
+  const nx = Math.max(b.x, Math.min(cx, b.x+b.w));
+  const ny = Math.max(b.y, Math.min(cy, b.y+b.h));
+  const dx = cx-nx, dy = cy-ny;
+  const dist = Math.sqrt(dx*dx+dy*dy);
+  if(dist < r && dist > 0) {
+    const push = (r-dist)/dist;
+    obj.x += dx*push;
+    obj.y += dy*push;
+  }
+}
+
+function bounceCircleRect(e, r, b) {
+  const cx = e.x, cy = e.y;
+  const nx = Math.max(b.x, Math.min(cx, b.x+b.w));
+  const ny = Math.max(b.y, Math.min(cy, b.y+b.h));
+  const dx = cx-nx, dy = cy-ny;
+  const dist = Math.sqrt(dx*dx+dy*dy);
+  if(dist < r && dist > 0) {
+    /* 押し出し */
+    const push = (r-dist)/dist;
+    e.x += dx*push;
+    e.y += dy*push;
+    /* 衝突前の位置でどちらの面に当たったか判定 */
+    const prevX = cx - e.vx;
+    const prevY = cy - e.vy;
+    const wasOutsideX = prevX < b.x - r + 1 || prevX > b.x + b.w + r - 1;
+    const wasOutsideY = prevY < b.y - r + 1 || prevY > b.y + b.h + r - 1;
+    if(wasOutsideX && !wasOutsideY) {
+      e.vx = -e.vx;
+    } else if(wasOutsideY && !wasOutsideX) {
+      e.vy = -e.vy;
+    } else {
+      /* 斜め衝突：めり込み量が大きい軸で反射 */
+      const overlapX = r - Math.abs(dx);
+      const overlapY = r - Math.abs(dy);
+      if(overlapX < overlapY) e.vx = -e.vx;
+      else e.vy = -e.vy;
+    }
+  }
+}
+
+/* ─── 描画 ─── */
+function draw() {
+  ctx.clearRect(0,0,W,H);
+
+  /* 背景 */
+  ctx.fillStyle = '#f5f0e8';
+  ctx.fillRect(0,0,W,H);
+
+  /* ドットグリッド */
+  ctx.fillStyle = '#ccc';
+  for(let x=20;x<W;x+=30) for(let y=20;y<H;y+=30)
+    ctx.fillRect(x,y,2,2);
+
+  /* ブロック（外枠・通常すべて同じ見た目） */
+  for(const b of blocks) {
+    if(!b.alive) continue;
+    ctx.fillStyle = '#6b4200';
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = '#3d2600';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    for(let i=8; i<b.w; i+=14) {
+      ctx.beginPath();
+      ctx.moveTo(b.x+i, b.y+2);
+      ctx.lineTo(b.x+i, b.y+b.h-2);
+      ctx.stroke();
+    }
+  }
+
+  /* ビーム */
+  for(const beam of beams) {
+    ctx.save();
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#ffec6e';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(beam.x - Math.cos(beam.angle)*BEAM_LEN,
+               beam.y - Math.sin(beam.angle)*BEAM_LEN);
+    ctx.lineTo(beam.x, beam.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* 敵（青いスライム風） */
+  for(const e of enemies) {
+    if(e.alive===false) continue;
+    ctx.save();
+    ctx.fillStyle = '#2979ff';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, ENEMY_R, 0, Math.PI*2);
+    ctx.fill();
+    /* ハイライト */
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(e.x-6, e.y-6, 7, 5, -Math.PI/4, 0, Math.PI*2);
+    ctx.fill();
+    /* 目 */
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(e.x-5, e.y-3, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x+5, e.y-3, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1a237e';
+    ctx.beginPath(); ctx.arc(e.x-5, e.y-3, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x+5, e.y-3, 2, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  /* プレイヤー（赤い丸＋向き表示） */
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.rotate(player.angle);
+  /* 胴体 */
+  ctx.fillStyle = '#e53935';
+  ctx.beginPath();
+  ctx.arc(0, 0, PLAYER_R, 0, Math.PI*2);
+  ctx.fill();
+  /* ハイライト */
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(-4,-5,6,4,-Math.PI/4,0,Math.PI*2);
+  ctx.fill();
+  /* 砲口 */
+  ctx.fillStyle = '#b71c1c';
+  ctx.fillRect(PLAYER_R-4, -4, 14, 8);
+  ctx.restore();
+}
+
+
+
+/* ─── ゲームループ ─── */
+function loop() {
+  update();
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+/* ─── オーバーレイ ─── */
+function showOverlay(title, msg, btnLabel) {
+  overlayTitle.textContent = title;
+  overlayMsg.textContent   = msg;
+  overlayBtn.textContent   = btnLabel;
+  overlay.style.display    = 'block';
+}
+
+function hideOverlay() {
+  overlay.style.display = 'none';
+}
+
+/* ─── イベント ─── */
+overlayBtn.addEventListener('click', () => {
+  if(state === 'title' || state === 'over') {
+    stage = 0;
+    initStage(stage);
+    hideOverlay();
+    state = 'playing';
+    startTimer();
+  } else if(state === 'clear') {
+    if(stage < STAGES.length) {
+      // すでにinitStage済みなのでそのまま開始
+      hideOverlay();
+      state = 'playing';
+      startTimer();
+    } else {
+      // ゲームクリア後にもう一度
+      stage = 0;
+      initStage(stage);
+      hideOverlay();
+      state = 'playing';
+      startTimer();
+    }
+  }
+});
+
+function triggerGameOver(reason) {
+  state = 'over';
+  clearInterval(timerInterval);
+  showOverlay('ゲームオーバー', reason + '\nもう一度挑戦しよう！', 'リトライ');
+}
+
+/* ─── 起動 ─── */
+initStage(0);
+showOverlay('2Dシューティング', 'WASDで移動\nマウスで照準・クリックでビーム発射\n敵（青）を全滅させよう！', 'ゲームスタート');
+state = 'title';
+loop();
+</script>
+</body>
+</html>
