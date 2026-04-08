@@ -299,6 +299,68 @@ let mouseX = W/2, mouseY = H/2;
 let timeLeft, timerInterval;
 let animId;
 
+/* ─── 効果音（Web Audio API） ─── */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(type) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g);
+  g.connect(audioCtx.destination);
+
+  if(type === 'beam') {
+    // ビーム発射：短い高音
+    o.type = 'square';
+    o.frequency.setValueAtTime(880, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.08);
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+    o.start(); o.stop(audioCtx.currentTime + 0.08);
+
+  } else if(type === 'enemy') {
+    // 敵撃破：爆発っぽいノイズ
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(200, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.3);
+    g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    o.start(); o.stop(audioCtx.currentTime + 0.3);
+
+  } else if(type === 'block') {
+    // ブロック破壊：低めのポン
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(300, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.15);
+    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+    o.start(); o.stop(audioCtx.currentTime + 0.15);
+
+  } else if(type === 'clear') {
+    // ステージクリア：上昇音
+    [523, 659, 784, 1046].forEach((freq, i) => {
+      const oc = audioCtx.createOscillator();
+      const gc = audioCtx.createGain();
+      oc.connect(gc); gc.connect(audioCtx.destination);
+      oc.type = 'sine';
+      const t = audioCtx.currentTime + i * 0.12;
+      oc.frequency.setValueAtTime(freq, t);
+      gc.gain.setValueAtTime(0.25, t);
+      gc.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      oc.start(t); oc.stop(t + 0.2);
+    });
+    return;
+
+  } else if(type === 'gameover') {
+    // ゲームオーバー：下降音
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(440, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(55, audioCtx.currentTime + 0.8);
+    g.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+    o.start(); o.stop(audioCtx.currentTime + 0.8);
+  }
+}
+
 /* ─── 定数 ─── */
 const PLAYER_SPEED = 4;
 const PLAYER_R     = 16;
@@ -368,6 +430,7 @@ canvas.addEventListener('click', () => {
 });
 
 function fireBeam() {
+  playSound('beam');
   const angle = Math.atan2(mouseY - player.y, mouseX - player.x);
   beams.push({
     x: player.x + Math.cos(angle)*(PLAYER_R+2),
@@ -409,6 +472,7 @@ function update() {
       if(rectContains(b, beam.x, beam.y)) {
         b.alive = false;
         beam.alive = false;
+        playSound('block');
         break;
       }
     }
@@ -421,6 +485,7 @@ function update() {
       if(dx*dx+dy*dy < ENEMY_R*ENEMY_R) {
         e.alive = false;
         beam.alive = false;
+        playSound('enemy');
         break;
       }
     }
@@ -458,8 +523,9 @@ function update() {
     clearInterval(timerInterval);
     if(stage+1 < STAGES.length) {
       stage++;
-      initStage(stage);  // 次ステージを先に読み込んで背景に表示
+      initStage(stage);
       hudStage.textContent = stage + 1;
+      playSound('clear');
       showOverlay('ステージクリア！', `次のステージへ進みます。\nステージ ${stage+1} 開始！`, 'ステージ ' + (stage+1));
       state = 'clear';
     } else {
@@ -631,6 +697,7 @@ function hideOverlay() {
 
 /* ─── イベント ─── */
 overlayBtn.addEventListener('click', () => {
+  audioCtx.resume(); // ブラウザのAutoPlay制限を解除
   if(state === 'title' || state === 'over') {
     stage = 0;
     initStage(stage);
@@ -657,6 +724,7 @@ overlayBtn.addEventListener('click', () => {
 function triggerGameOver(reason) {
   state = 'over';
   clearInterval(timerInterval);
+  playSound('gameover');
   showOverlay('ゲームオーバー', reason + '\nもう一度挑戦しよう！', 'リトライ');
 }
 
