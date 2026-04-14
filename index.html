@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>2Dシューティングゲーム</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -16,12 +16,14 @@
     font-family: 'Segoe UI', sans-serif;
     color: #fff;
     user-select: none;
+    overflow: hidden;
+    touch-action: none;
   }
   #hud {
     display: flex;
-    gap: 40px;
-    margin-bottom: 12px;
-    font-size: 18px;
+    gap: 24px;
+    margin-bottom: 8px;
+    font-size: 16px;
     font-weight: 600;
   }
   #hud span { color: #ffd700; }
@@ -30,6 +32,7 @@
     border-radius: 4px;
     cursor: crosshair;
     display: block;
+    max-width: 100%;
   }
   #overlay {
     position: absolute;
@@ -39,25 +42,78 @@
     background: rgba(0,0,0,0.82);
     border: 2px solid #ffd700;
     border-radius: 12px;
-    padding: 36px 52px;
+    padding: 28px 32px;
     text-align: center;
     display: none;
     z-index: 10;
+    width: 80%;
+    max-width: 400px;
   }
-  #overlay h2 { font-size: 36px; margin-bottom: 12px; }
-  #overlay p  { font-size: 16px; color: #ccc; margin-bottom: 24px; line-height: 1.6; }
+  #overlay h2 { font-size: 28px; margin-bottom: 10px; }
+  #overlay p  { font-size: 14px; color: #ccc; margin-bottom: 20px; line-height: 1.6; }
   #overlay button {
     background: #ffd700;
     color: #1a1a2e;
     border: none;
-    padding: 12px 36px;
+    padding: 14px 36px;
     font-size: 16px;
     font-weight: 700;
     border-radius: 8px;
     cursor: pointer;
+    min-width: 140px;
   }
   #overlay button:hover { background: #ffec6e; }
   #wrapper { position: relative; }
+
+  /* ─── スマホ用コントロールパネル（canvas下） ─── */
+  #controls {
+    display: none;
+    width: 100%;
+    max-width: 900px;
+    height: 140px;
+    margin-top: 10px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+  }
+  /* ジョイスティック */
+  #joystick-base {
+    width: 110px; height: 110px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 2px solid rgba(255,255,255,0.25);
+    position: relative;
+    flex-shrink: 0;
+    touch-action: none;
+  }
+  #joystick-stick {
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.45);
+    border: 2px solid rgba(255,255,255,0.7);
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  /* 発射ボタン */
+  #shoot-btn {
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: rgba(229,57,53,0.7);
+    border: 3px solid rgba(255,100,100,0.8);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    touch-action: none;
+    cursor: pointer;
+  }
+  #shoot-btn:active { background: rgba(229,57,53,1); }
 </style>
 </head>
 <body>
@@ -65,7 +121,6 @@
 <div id="hud">
   <div>ステージ <span id="stageNum">1</span></div>
   <div>敵 <span id="enemyCount">0</span></div>
-  <div>残り <span id="timeLeft">60</span>秒</div>
 </div>
 
 <div id="wrapper">
@@ -74,15 +129,50 @@
     <h2 id="overlayTitle"></h2>
     <p id="overlayMsg"></p>
     <button id="overlayBtn">スタート</button>
+    <div id="shareArea" style="display:none; margin-top:16px;">
+      <a id="shareX" href="#" target="_blank" rel="noopener"
+        style="display:inline-flex;align-items:center;gap:8px;background:#000;color:#fff;
+               text-decoration:none;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:700;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+        </svg>
+        Xでシェア
+      </a>
+    </div>
   </div>
 </div>
 
-<p style="margin-top:10px;font-size:13px;color:#888;">WASD / 矢印キー：移動　マウス：照準　クリック：ビーム発射</p>
+<p id="hint" style="margin-top:8px;font-size:12px;color:#888;">WASD / 矢印キー：移動　マウス：照準　クリック：ビーム発射</p>
+
+<!-- スマホ用コントロール（canvas下に固定表示） -->
+<div id="controls">
+  <div id="joystick-base">
+    <div id="joystick-stick"></div>
+  </div>
+  <div style="color:#aaa;font-size:12px;text-align:center;line-height:1.6;">
+    左：移動<br>右：発射
+  </div>
+  <div id="shoot-btn">発射</div>
+</div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
+
+/* ─── レスポンシブcanvasサイズ ─── */
+const BASE_W = 900, BASE_H = 550;
+let scale = 1;
+function resizeCanvas() {
+  const maxW = window.innerWidth;
+  const maxH = window.innerHeight - 80;
+  scale = Math.min(maxW / BASE_W, maxH / BASE_H, 1);
+  canvas.style.width  = (BASE_W * scale) + 'px';
+  canvas.style.height = (BASE_H * scale) + 'px';
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const W = BASE_W, H = BASE_H;
 
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlayTitle');
@@ -183,7 +273,7 @@ const STAGES = [
       {x:750,y:120,vx:-3.5,vy:3},
       {x:120,y:430,vx:3,vy:-4},
       {x:750,y:430,vx:-4,vy:-2.5},
-      {x:430,y:270,vx:3,vy:3},
+      {x:430,y:270,vx:3,vy:3,hp:3}, // 強敵
     ],
     blocks: [
       {x:350,y:80,w:60,h:60},
@@ -203,7 +293,7 @@ const STAGES = [
       {x:700,y:130,vx:-4,vy:2.5},
       {x:150,y:420,vx:3.5,vy:-4},
       {x:700,y:420,vx:-3,vy:-4},
-      {x:430,y:150,vx:4,vy:4},
+      {x:430,y:150,vx:4,vy:4,hp:3}, // 強敵
       {x:430,y:420,vx:-4,vy:-3},
     ],
     blocks: [
@@ -223,8 +313,8 @@ const STAGES = [
       {x:700,y:100,vx:-4,vy:3.5},
       {x:150,y:450,vx:3.5,vy:-4.5},
       {x:700,y:450,vx:-4.5,vy:-3},
-      {x:430,y:100,vx:3,vy:4.5},
-      {x:430,y:450,vx:-3.5,vy:-4},
+      {x:430,y:100,vx:3,vy:4.5,hp:3}, // 強敵
+      {x:430,y:450,vx:-3.5,vy:-4,hp:3}, // 強敵
       {x:200,y:280,vx:4,vy:-3},
     ],
     blocks: [
@@ -245,8 +335,8 @@ const STAGES = [
       {x:760,y:120,vx:-4.5,vy:3.5},
       {x:120,y:430,vx:4,vy:-5},
       {x:760,y:430,vx:-5,vy:-3.5},
-      {x:440,y:120,vx:3.5,vy:5},
-      {x:440,y:430,vx:-4,vy:-4.5},
+      {x:440,y:120,vx:3.5,vy:5,hp:3}, // 強敵
+      {x:440,y:430,vx:-4,vy:-4.5,hp:3}, // 強敵
       {x:200,y:270,vx:4.5,vy:-3},
       {x:680,y:270,vx:-3.5,vy:4},
     ],
@@ -269,9 +359,9 @@ const STAGES = [
       {x:760,y:100,vx:-5,vy:3},
       {x:120,y:450,vx:4.5,vy:-5},
       {x:760,y:450,vx:-4.5,vy:-4.5},
-      {x:440,y:100,vx:3.5,vy:5},
-      {x:440,y:450,vx:-5,vy:-3.5},
-      {x:120,y:270,vx:5,vy:-3},
+      {x:440,y:100,vx:3.5,vy:5,hp:3}, // 強敵
+      {x:440,y:450,vx:-5,vy:-3.5,hp:3}, // 強敵
+      {x:120,y:270,vx:5,vy:-3,hp:3}, // 強敵
       {x:760,y:270,vx:-4,vy:5},
       {x:440,y:270,vx:4,vy:-4},
     ],
@@ -292,7 +382,7 @@ const STAGES = [
 
 /* ─── ゲーム状態 ─── */
 let stage = 0;
-let state = 'title'; // title | playing | clear | over
+let state = 'title'; // title | playing | clear | over | boss
 let player, enemies, blocks, beams;
 let keys = {};
 let mouseX = W/2, mouseY = H/2;
@@ -316,6 +406,15 @@ function playSound(type) {
     g.gain.setValueAtTime(0.15, audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
     o.start(); o.stop(audioCtx.currentTime + 0.08);
+
+  } else if(type === 'hit') {
+    // 強敵ダメージ：短い鈍い音
+    o.type = 'square';
+    o.frequency.setValueAtTime(150, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.12);
+    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+    o.start(); o.stop(audioCtx.currentTime + 0.12);
 
   } else if(type === 'enemy') {
     // 敵撃破：爆発っぽいノイズ
@@ -369,6 +468,43 @@ const BEAM_SPEED   = 12;
 const BEAM_LEN     = 28;
 const BS = 40; // 外枠ブロックのサイズ（正方形）
 
+/* ─── ボス定数 ─── */
+const BOSS_STAGE    = 10;
+const BOSS_R        = PLAYER_R * 5;
+const BOSS_MAX_HP   = 100;
+const BOSS_BASE_SPD = 0.8;
+
+function makeBoss() {
+  return {
+    x: W / 2, y: H / 2,
+    vx: BOSS_BASE_SPD, vy: BOSS_BASE_SPD * 0.7,
+    hp: BOSS_MAX_HP, maxHp: BOSS_MAX_HP,
+    isBoss: true, alive: true,
+  };
+}
+
+function bossSpeed(hp) {
+  const t = 1 - hp / BOSS_MAX_HP;
+  return BOSS_BASE_SPD + t * 3.2;
+}
+
+function spawnFromBoss(boss, count, spd) {
+  const spawned = [];
+  for(let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+    const dist  = BOSS_R + ENEMY_R * 2;
+    const hp    = Math.random() < 0.4 ? 3 : 1;
+    spawned.push({
+      x: boss.x + Math.cos(angle) * dist,
+      y: boss.y + Math.sin(angle) * dist,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      hp, maxHp: hp,
+    });
+  }
+  return spawned;
+}
+
 /* 外枠：消えるブロックを端に敷き詰める */
 function makeBorderBlocks() {
   const out = [];
@@ -386,34 +522,56 @@ function makeBorderBlocks() {
 }
 
 /* ─── 初期化 ─── */
+const MIN_SPAWN_DIST = 180; // プレイヤーと敵の最低距離
+
 function initStage(s) {
   const def = STAGES[s];
   player = { x: BS*2, y: BS*2, angle: 0 };
-  enemies = def.enemies.map(e => ({...e}));
+
+  /* 敵の初期位置をプレイヤーから一定距離離す */
+  enemies = def.enemies.map(e => {
+    const ne = {...e, hp: e.hp || 1, maxHp: e.hp || 1};
+    let nx = ne.x, ny = ne.y;
+    const dx = nx - player.x, dy = ny - player.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < MIN_SPAWN_DIST) {
+      const angle = Math.atan2(dy, dx);
+      nx = player.x + Math.cos(angle) * MIN_SPAWN_DIST;
+      ny = player.y + Math.sin(angle) * MIN_SPAWN_DIST;
+      // 画面内に収める
+      nx = Math.max(BS + ENEMY_R, Math.min(W - BS - ENEMY_R, nx));
+      ny = Math.max(BS + ENEMY_R, Math.min(H - BS - ENEMY_R, ny));
+    }
+    return {...ne, x: nx, y: ny};
+  });
+
   blocks  = [
     ...makeBorderBlocks(),
     ...def.blocks.map(b => ({...b, alive:true}))
   ];
   beams   = [];
-  timeLeft = def.timeLimit;
   hudStage.textContent = s + 1;
+  updateHUD();
+}
+
+/* ─── ボスステージ初期化 ─── */
+function initBossStage() {
+  player  = { x: BS*2, y: H/2, angle: 0 };
+  enemies = [ makeBoss() ];
+  blocks  = makeBorderBlocks();
+  beams   = [];
+  hudStage.textContent = 'BOSS';
   updateHUD();
 }
 
 function updateHUD() {
   hudEnemy.textContent = enemies.filter(e=>e.alive!==false).length;
-  hudTime.textContent  = timeLeft;
 }
 
 /* ─── タイマー ─── */
 function startTimer() {
   clearInterval(timerInterval);
-  timerInterval = setInterval(()=>{
-    if(state !== 'playing') return;
-    timeLeft--;
-    hudTime.textContent = timeLeft;
-    if(timeLeft <= 0) triggerGameOver('時間切れ！');
-  }, 1000);
+  // 制限時間なし
 }
 
 /* ─── 入力 ─── */
@@ -421,13 +579,97 @@ document.addEventListener('keydown', e => { keys[e.key] = true; });
 document.addEventListener('keyup',   e => { keys[e.key] = false; });
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
-  mouseX = e.clientX - r.left;
-  mouseY = e.clientY - r.top;
+  mouseX = (e.clientX - r.left) / scale;
+  mouseY = (e.clientY - r.top)  / scale;
 });
 canvas.addEventListener('click', () => {
   if(state !== 'playing') return;
   fireBeam();
 });
+
+/* ─── タッチ操作（canvas下のコントロールパネル） ─── */
+const isMobile = () => window.matchMedia('(pointer: coarse)').matches;
+const controlsEl   = document.getElementById('controls');
+const joystickBase = document.getElementById('joystick-base');
+const joystickStick= document.getElementById('joystick-stick');
+const shootBtn     = document.getElementById('shoot-btn');
+const STICK_MAX = 40;
+
+let joyActive = false, joyId = null;
+let joyDx = 0, joyDy = 0;
+
+function showJoystick() {
+  if(isMobile()) {
+    controlsEl.style.display = 'flex';
+    document.getElementById('hint').style.display = 'none';
+  }
+}
+
+/* ジョイスティック操作 */
+joystickBase.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  if(joyId !== null) return;
+  joyId = t.identifier;
+  joyActive = true;
+  updateStick(t);
+}, {passive: false});
+
+joystickBase.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for(const t of e.changedTouches) {
+    if(t.identifier !== joyId) continue;
+    updateStick(t);
+  }
+}, {passive: false});
+
+joystickBase.addEventListener('touchend', e => {
+  e.preventDefault();
+  for(const t of e.changedTouches) {
+    if(t.identifier !== joyId) continue;
+    joyId = null; joyActive = false;
+    joyDx = 0; joyDy = 0;
+    joystickStick.style.transform = 'translate(-50%, -50%)';
+  }
+}, {passive: false});
+
+function updateStick(t) {
+  const r = joystickBase.getBoundingClientRect();
+  const cx = r.left + r.width  / 2;
+  const cy = r.top  + r.height / 2;
+  const dx = t.clientX - cx;
+  const dy = t.clientY - cy;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const clamped = Math.min(dist, STICK_MAX);
+  const angle = Math.atan2(dy, dx);
+  joyDx = Math.cos(angle) * clamped / STICK_MAX;
+  joyDy = Math.sin(angle) * clamped / STICK_MAX;
+  const sx = 50 + joyDx * STICK_MAX;
+  const sy = 50 + joyDy * STICK_MAX;
+  joystickStick.style.transform = `translate(calc(${sx}% - 50%), calc(${sy}% - 50%))`;
+  joystickStick.style.left = sx + '%';
+  joystickStick.style.top  = sy + '%';
+}
+
+/* 発射ボタン：プレイヤーから最寄りの敵に向けて自動照準して発射 */
+shootBtn.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if(state !== 'playing') return;
+  audioCtx.resume();
+  // 生き残っている敵の中で最も近い敵に自動照準
+  const alive = enemies.filter(en => en.alive !== false);
+  if(alive.length > 0) {
+    let target = alive[0];
+    let minD = Infinity;
+    for(const en of alive) {
+      const d = (en.x-player.x)**2 + (en.y-player.y)**2;
+      if(d < minD) { minD = d; target = en; }
+    }
+    mouseX = target.x;
+    mouseY = target.y;
+  }
+  fireBeam();
+}, {passive: false});
 
 function fireBeam() {
   playSound('beam');
@@ -446,11 +688,19 @@ function fireBeam() {
 function update() {
   if(state !== 'playing') return;
 
-  /* プレイヤー移動 */
-  if((keys['w']||keys['W']||keys['ArrowUp'])    && player.y > PLAYER_R) player.y -= PLAYER_SPEED;
-  if((keys['s']||keys['S']||keys['ArrowDown'])  && player.y < H-PLAYER_R) player.y += PLAYER_SPEED;
-  if((keys['a']||keys['A']||keys['ArrowLeft'])  && player.x > PLAYER_R) player.x -= PLAYER_SPEED;
-  if((keys['d']||keys['D']||keys['ArrowRight']) && player.x < W-PLAYER_R) player.x += PLAYER_SPEED;
+  /* プレイヤー移動（キーボード＋ジョイスティック） */
+  const spd = PLAYER_SPEED;
+  let moveX = 0, moveY = 0;
+  if(keys['w']||keys['W']||keys['ArrowUp'])    moveY -= 1;
+  if(keys['s']||keys['S']||keys['ArrowDown'])  moveY += 1;
+  if(keys['a']||keys['A']||keys['ArrowLeft'])  moveX -= 1;
+  if(keys['d']||keys['D']||keys['ArrowRight']) moveX += 1;
+  if(joyActive) { moveX += joyDx; moveY += joyDy; }
+  if(moveX !== 0 || moveY !== 0) {
+    const len = Math.sqrt(moveX*moveX + moveY*moveY);
+    player.x = Math.max(PLAYER_R, Math.min(W-PLAYER_R, player.x + (moveX/len)*spd));
+    player.y = Math.max(PLAYER_R, Math.min(H-PLAYER_R, player.y + (moveY/len)*spd));
+  }
   player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
 
   /* ブロックとのめり込み補正（プレイヤー） */
@@ -478,14 +728,41 @@ function update() {
     }
     if(!beam.alive) continue;
 
-    /* ビームと敵 */
+    /* ビームと敵・ボス */
     for(const e of enemies) {
       if(e.alive===false) continue;
       const dx = beam.x - e.x, dy = beam.y - e.y;
-      if(dx*dx+dy*dy < ENEMY_R*ENEMY_R) {
-        e.alive = false;
+      const r = e.isBoss ? BOSS_R : (e.maxHp > 1 ? ENEMY_R * 1.3 : ENEMY_R);
+      if(dx*dx+dy*dy < r*r) {
+        e.hp--;
         beam.alive = false;
-        playSound('enemy');
+        if(e.hp <= 0) {
+          e.alive = false;
+          playSound('enemy');
+        } else {
+          playSound('hit');
+          // ボスはHP5減るたびに敵を放出
+          if(e.isBoss && e.hp % 5 === 0) {
+            if(e.hp > 50) {
+              // フェーズ1：1体放出（HP1かHP3）
+              const sp = Math.random() < 0.4 ? 3 : 1;
+              const spd = 2.5;
+              const ang = Math.random() * Math.PI * 2;
+              enemies.push({
+                x: e.x + Math.cos(ang)*(BOSS_R + ENEMY_R*2),
+                y: e.y + Math.sin(ang)*(BOSS_R + ENEMY_R*2),
+                vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
+                hp: sp, maxHp: sp,
+              });
+            } else {
+              // フェーズ2：3〜5体を高速放出
+              const count = 3 + Math.floor(Math.random() * 3);
+              const spd   = 4 + Math.random() * 2;
+              const spawned = spawnFromBoss(e, count, spd);
+              for(const s of spawned) enemies.push(s);
+            }
+          }
+        }
         break;
       }
     }
@@ -493,43 +770,115 @@ function update() {
   beams = beams.filter(b=>b.alive);
 
   /* 敵更新 */
+  const toSpawn = [];
   for(const e of enemies) {
     if(e.alive===false) continue;
+
+    // ボスは速度をHPに応じて動的に更新
+    if(e.isBoss) {
+      const spd = bossSpeed(e.hp);
+      const cur = Math.sqrt(e.vx*e.vx + e.vy*e.vy);
+      if(cur > 0) { e.vx = e.vx/cur*spd; e.vy = e.vy/cur*spd; }
+    }
+
     e.x += e.vx;
     e.y += e.vy;
 
     /* ブロックバウンス */
+    const er = e.isBoss ? BOSS_R : (e.maxHp > 1 ? ENEMY_R*1.3 : ENEMY_R);
     for(const b of blocks) {
       if(!b.alive) continue;
-      bounceCircleRect(e, ENEMY_R, b);
+      bounceCircleRect(e, er, b);
     }
 
-    /* 画面外チェック（念のため） */
-    if(e.x<-ENEMY_R||e.x>W+ENEMY_R||e.y<-ENEMY_R||e.y>H+ENEMY_R) {
-      triggerGameOver('敵が画面外に出た！');
-      return;
+    /* 画面外チェック → ゲームオーバーではなく2倍スポーン */
+    /* ボスは画面外に出たら反対側からワープして戻る */
+    if(e.isBoss) {
+      if(e.x < -BOSS_R)  e.x = W + BOSS_R;
+      if(e.x > W+BOSS_R) e.x = -BOSS_R;
+      if(e.y < -BOSS_R)  e.y = H + BOSS_R;
+      if(e.y > H+BOSS_R) e.y = -BOSS_R;
+    } else if(e.x < -ENEMY_R || e.x > W+ENEMY_R || e.y < -ENEMY_R || e.y > H+ENEMY_R) {
+      e.alive = false;
+      // 出た辺を判定してスポーン位置と侵入方向を決める
+      for(let i = 0; i < 2; i++) {
+        const spd = Math.sqrt(e.vx*e.vx + e.vy*e.vy);
+        let sx, sy, svx, svy;
+        // 出た辺に応じて反対側の辺からスポーン
+        if(e.x < -ENEMY_R) {
+          // 左から出た → 右辺からスポーン
+          sx = W - BS - ENEMY_R;
+          sy = BS + ENEMY_R + Math.random() * (H - BS*2 - ENEMY_R*2);
+          const angle = Math.PI + (Math.random()-0.5) * 0.8;
+          svx = Math.cos(angle) * spd;
+          svy = Math.sin(angle) * spd;
+        } else if(e.x > W+ENEMY_R) {
+          // 右から出た → 左辺からスポーン
+          sx = BS + ENEMY_R;
+          sy = BS + ENEMY_R + Math.random() * (H - BS*2 - ENEMY_R*2);
+          const angle = (Math.random()-0.5) * 0.8;
+          svx = Math.cos(angle) * spd;
+          svy = Math.sin(angle) * spd;
+        } else if(e.y < -ENEMY_R) {
+          // 上から出た → 下辺からスポーン
+          sx = BS + ENEMY_R + Math.random() * (W - BS*2 - ENEMY_R*2);
+          sy = H - BS - ENEMY_R;
+          const angle = -Math.PI/2 + (Math.random()-0.5) * 0.8;
+          svx = Math.cos(angle) * spd;
+          svy = Math.sin(angle) * spd;
+        } else {
+          // 下から出た → 上辺からスポーン
+          sx = BS + ENEMY_R + Math.random() * (W - BS*2 - ENEMY_R*2);
+          sy = BS + ENEMY_R;
+          const angle = Math.PI/2 + (Math.random()-0.5) * 0.8;
+          svx = Math.cos(angle) * spd;
+          svy = Math.sin(angle) * spd;
+        }
+        toSpawn.push({ x:sx, y:sy, vx:svx, vy:svy, hp:e.maxHp, maxHp:e.maxHp });
+      }
+      playSound('hit'); // スポーン警告音
+      continue;
     }
 
     /* プレイヤーへの衝突チェック */
+    const collR = e.isBoss ? BOSS_R : (e.maxHp > 1 ? ENEMY_R * 1.3 : ENEMY_R);
     const pdx = e.x - player.x, pdy = e.y - player.y;
-    if(pdx*pdx+pdy*pdy < (ENEMY_R+PLAYER_R)*(ENEMY_R+PLAYER_R)) {
-      triggerGameOver('敵にやられた！');
+    if(pdx*pdx+pdy*pdy < (collR+PLAYER_R)*(collR+PLAYER_R)) {
+      triggerGameOver('やられた！');
       return;
     }
   }
+  // スポーン分を追加
+  for(const ne of toSpawn) enemies.push(ne);
 
   /* クリア判定 */
   if(enemies.every(e=>e.alive===false)) {
     clearInterval(timerInterval);
-    if(stage+1 < STAGES.length) {
+    if(stage + 1 < STAGES.length) {
+      // 次の通常ステージへ
       stage++;
       initStage(stage);
       hudStage.textContent = stage + 1;
       playSound('clear');
       showOverlay('ステージクリア！', `次のステージへ進みます。\nステージ ${stage+1} 開始！`, 'ステージ ' + (stage+1));
       state = 'clear';
+    } else if(stage === STAGES.length - 1) {
+      // 通常ステージ最終クリア → ボス登場
+      stage = BOSS_STAGE;
+      initBossStage();
+      playSound('clear');
+      showOverlay('⚠️ ラスボス出現！', '全ステージを制覇した！\nしかし…最後の敵が待ち構えている！', 'ボスに挑む！');
+      state = 'clear';
     } else {
-      showOverlay('ゲームクリア！', '全ステージを制覇しました！\nおめでとうございます！', 'もう一度遊ぶ');
+      // ボス撃破 → ゲームクリア
+      playSound('clear');
+      showOverlay('🎉 ゲームクリア！', 'ラスボスを倒した！\n完全制覇おめでとうございます！', 'もう一度遊ぶ');
+      const shareArea = document.getElementById('shareArea');
+      const shareX    = document.getElementById('shareX');
+      const gameUrl   = location.href;
+      const text = `ラスボスを倒して完全制覇しました！🎮💥 ブラウザで遊べる2Dシューティングゲーム、あなたも挑戦してみて！ #2Dシューティング #ゲーム制作`;
+      shareX.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(gameUrl)}`;
+      shareArea.style.display = 'block';
       state = 'clear';
     }
   }
@@ -631,26 +980,106 @@ function draw() {
     ctx.restore();
   }
 
-  /* 敵（青いスライム風） */
+  /* 敵・ボス */
   for(const e of enemies) {
     if(e.alive===false) continue;
+
+    /* ─── ボス描画 ─── */
+    if(e.isBoss) {
+      const r = BOSS_R;
+      const hpRatio = e.hp / BOSS_MAX_HP;
+      // フェーズで色変化：HP高→深紅、HP低→黄
+      const red   = 180 + Math.round((1-hpRatio)*75);
+      const green = Math.round(hpRatio * 30);
+      ctx.save();
+      // 外輪（オーラ）
+      ctx.strokeStyle = hpRatio > 0.5 ? 'rgba(180,0,255,0.5)' : 'rgba(255,80,0,0.6)';
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r+10, 0, Math.PI*2); ctx.stroke();
+      // 本体
+      ctx.fillStyle = `rgb(${red},${green},30)`;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI*2); ctx.fill();
+      // ハイライト
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath(); ctx.ellipse(e.x-r*0.3, e.y-r*0.3, r*0.35, r*0.25, -Math.PI/4, 0, Math.PI*2); ctx.fill();
+      // 怒り目
+      const eyeOff = r * 0.28, eyeR = r*0.18, pupilR = r*0.10;
+      ctx.fillStyle = '#ff0'; 
+      ctx.beginPath(); ctx.arc(e.x-eyeOff, e.y-eyeOff*0.4, eyeR, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(e.x+eyeOff, e.y-eyeOff*0.4, eyeR, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(e.x-eyeOff, e.y-eyeOff*0.4, pupilR, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(e.x+eyeOff, e.y-eyeOff*0.4, pupilR, 0, Math.PI*2); ctx.fill();
+      // HPバー
+      const barW = r * 2, barH = 10;
+      const barX = e.x - r, barY = e.y + r + 10;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = hpRatio > 0.5 ? '#e53935' : '#ff9800';
+      ctx.fillRect(barX, barY, barW * hpRatio, barH);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barW, barH);
+      // HP数値
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(r*0.4)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(e.hp, e.x, e.y);
+      // フェーズ表示
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = hpRatio > 0.5 ? '#cc80ff' : '#ff9800';
+      ctx.fillText(hpRatio > 0.5 ? 'PHASE 1' : '⚠ PHASE 2', e.x, barY + barH + 14);
+      ctx.restore();
+      continue;
+    }
+
+    const isTough = e.maxHp > 1;
+    const r = isTough ? ENEMY_R * 1.3 : ENEMY_R;
+
+    // HP別カラー
+    let bodyColor;
+    if(!isTough) {
+      bodyColor = '#2979ff'; // 通常：青
+    } else if(e.hp === 3) {
+      bodyColor = '#aa00ff'; // HP3：紫
+    } else if(e.hp === 2) {
+      bodyColor = '#ff6d00'; // HP2：オレンジ
+    } else {
+      bodyColor = '#ffea00'; // HP1：黄色（瀕死）
+    }
+
     ctx.save();
-    ctx.fillStyle = '#2979ff';
+    ctx.fillStyle = bodyColor;
     ctx.beginPath();
-    ctx.arc(e.x, e.y, ENEMY_R, 0, Math.PI*2);
+    ctx.arc(e.x, e.y, r, 0, Math.PI*2);
     ctx.fill();
+
     /* ハイライト */
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.beginPath();
-    ctx.ellipse(e.x-6, e.y-6, 7, 5, -Math.PI/4, 0, Math.PI*2);
+    ctx.ellipse(e.x - r*0.3, e.y - r*0.3, r*0.35, r*0.25, -Math.PI/4, 0, Math.PI*2);
     ctx.fill();
+
+    /* HP表示（強敵のみ） */
+    if(isTough) {
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(r * 0.7)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(e.hp, e.x, e.y);
+    }
+
     /* 目 */
+    const eyeOff = r * 0.28;
+    const eyeR   = r * 0.22;
+    const pupilR = r * 0.12;
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(e.x-5, e.y-3, 4, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(e.x+5, e.y-3, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x - eyeOff, e.y - eyeOff*0.5, eyeR, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x + eyeOff, e.y - eyeOff*0.5, eyeR, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = '#1a237e';
-    ctx.beginPath(); ctx.arc(e.x-5, e.y-3, 2, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(e.x+5, e.y-3, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x - eyeOff, e.y - eyeOff*0.5, pupilR, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(e.x + eyeOff, e.y - eyeOff*0.5, pupilR, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   }
 
@@ -693,25 +1122,40 @@ function showOverlay(title, msg, btnLabel) {
 
 function hideOverlay() {
   overlay.style.display = 'none';
+  document.getElementById('shareArea').style.display = 'none';
 }
 
 /* ─── イベント ─── */
 overlayBtn.addEventListener('click', () => {
-  audioCtx.resume(); // ブラウザのAutoPlay制限を解除
-  if(state === 'title' || state === 'over') {
+  audioCtx.resume();
+  showJoystick();
+  if(state === 'title') {
     stage = 0;
     initStage(stage);
     hideOverlay();
     state = 'playing';
     startTimer();
+  } else if(state === 'over') {
+    // ゲームオーバーになったステージからリトライ
+    if(stage === BOSS_STAGE) {
+      initBossStage();
+    } else {
+      initStage(stage);
+    }
+    hideOverlay();
+    state = 'playing';
+    startTimer();
   } else if(state === 'clear') {
-    if(stage < STAGES.length) {
-      // すでにinitStage済みなのでそのまま開始
+    if(stage === BOSS_STAGE) {
+      // ボスステージ開始
+      hideOverlay();
+      state = 'playing';
+      startTimer();
+    } else if(stage < STAGES.length) {
       hideOverlay();
       state = 'playing';
       startTimer();
     } else {
-      // ゲームクリア後にもう一度
       stage = 0;
       initStage(stage);
       hideOverlay();
@@ -730,7 +1174,10 @@ function triggerGameOver(reason) {
 
 /* ─── 起動 ─── */
 initStage(0);
-showOverlay('2Dシューティング', 'WASDで移動\nマウスで照準・クリックでビーム発射\n敵（青）を全滅させよう！', 'ゲームスタート');
+const startMsg = isMobile()
+  ? '左タッチ：移動\n右タッチ：照準・離して発射\n敵（青）を全滅させよう！'
+  : 'WASDで移動\nマウスで照準・クリックでビーム発射\n敵（青）を全滅させよう！';
+showOverlay('2Dシューティング', startMsg, 'ゲームスタート');
 state = 'title';
 loop();
 </script>
