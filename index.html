@@ -383,7 +383,9 @@ const STAGES = [
 /* ─── ゲーム状態 ─── */
 let stage = 0;
 let state = 'title'; // title | playing | clear | over | boss
-let player, enemies, blocks, beams;
+let player, enemies, blocks, beams, particles;
+let slowTimer = 0; // スローモーション残りフレーム数
+let slowClearFn = null; // スロー終了後に呼ぶ処理
 let keys = {};
 let mouseX = W/2, mouseY = H/2;
 let timeLeft, timerInterval;
@@ -473,6 +475,8 @@ const BOSS_STAGE    = 10;
 const BOSS_R        = PLAYER_R * 5;
 const BOSS_MAX_HP   = 100;
 const BOSS_BASE_SPD = 0.8;
+const SLOW_RATE     = 0.12; // スロー中の速度倍率
+const SLOW_FRAMES   = 30;  // スロー継続フレーム数（約0.5秒）
 
 function makeBoss() {
   return {
@@ -550,6 +554,7 @@ function initStage(s) {
     ...def.blocks.map(b => ({...b, alive:true}))
   ];
   beams   = [];
+  particles = [];
   hudStage.textContent = s + 1;
   updateHUD();
 }
@@ -560,6 +565,7 @@ function initBossStage() {
   enemies = [ makeBoss() ];
   blocks  = makeBorderBlocks();
   beams   = [];
+  particles = [];
   hudStage.textContent = 'BOSS';
   updateHUD();
 }
@@ -686,7 +692,31 @@ function fireBeam() {
 
 /* ─── 更新 ─── */
 function update() {
+  /* スローモーション処理 */
+  if(state === 'slowing') {
+    slowTimer--;
+    // 残り時間の割合（1.0→0.0）
+    const t = slowTimer / SLOW_FRAMES;
+    // 前半は等速、後半にかけてスローになるイージング（t^3で急激に落ちる）
+    const rate = SLOW_RATE + (1.0 - SLOW_RATE) * Math.pow(t, 3);
+    for(const p of particles) {
+      p.x += p.vx * rate;
+      p.y += p.vy * rate;
+      p.vx *= 0.92;
+      p.vy *= 0.92;
+      p.life -= p.decay * rate;
+    }
+    particles = particles.filter(p => p.life > 0);
+    if(slowTimer <= 0) {
+      slowClearFn && slowClearFn();
+      slowClearFn = null;
+    }
+    return;
+  }
   if(state !== 'playing') return;
+
+  /* スロー中の速度倍率（playing中は1.0） */
+  const timeScale = 1.0;
 
   /* プレイヤー移動（キーボード＋ジョイスティック） */
   const spd = PLAYER_SPEED;
@@ -739,6 +769,10 @@ function update() {
         if(e.hp <= 0) {
           e.alive = false;
           playSound('enemy');
+          // パーティクルエフェクト
+          const col = e.isBoss ? '#ff6d00' : (e.maxHp > 1 ? '#aa00ff' : '#2979ff');
+          const cnt = e.isBoss ? 20 : (e.maxHp > 1 ? 12 : 8);
+          spawnParticles(e.x, e.y, col, cnt, e.isBoss ? 6 : 4);
         } else {
           playSound('hit');
           // ボスはHP5減るたびに敵を放出
@@ -854,34 +888,49 @@ function update() {
   /* クリア判定 */
   if(enemies.every(e=>e.alive===false)) {
     clearInterval(timerInterval);
+    state = 'slowing';
+    slowTimer = SLOW_FRAMES;
     if(stage + 1 < STAGES.length) {
-      // 次の通常ステージへ
-      stage++;
-      initStage(stage);
-      hudStage.textContent = stage + 1;
-      playSound('clear');
-      showOverlay('ステージクリア！', `次のステージへ進みます。\nステージ ${stage+1} 開始！`, 'ステージ ' + (stage+1));
-      state = 'clear';
+      slowClearFn = () => {
+        stage++;
+        initStage(stage);
+        hudStage.textContent = stage + 1;
+        playSound('clear');
+        showOverlay('ステージクリア！', `次のステージへ進みます。\nステージ ${stage+1} 開始！`, 'ステージ ' + (stage+1));
+        state = 'clear';
+      };
     } else if(stage === STAGES.length - 1) {
-      // 通常ステージ最終クリア → ボス登場
-      stage = BOSS_STAGE;
-      initBossStage();
-      playSound('clear');
-      showOverlay('⚠️ ラスボス出現！', '全ステージを制覇した！\nしかし…最後の敵が待ち構えている！', 'ボスに挑む！');
-      state = 'clear';
+      slowClearFn = () => {
+        stage = BOSS_STAGE;
+        initBossStage();
+        playSound('clear');
+        showOverlay('⚠️ ラスボス出現！', '全ステージを制覇した！\nしかし…最後の敵が待ち構えている！', 'ボスに挑む！');
+        state = 'clear';
+      };
     } else {
-      // ボス撃破 → ゲームクリア
-      playSound('clear');
-      showOverlay('🎉 ゲームクリア！', 'ラスボスを倒した！\n完全制覇おめでとうございます！', 'もう一度遊ぶ');
-      const shareArea = document.getElementById('shareArea');
-      const shareX    = document.getElementById('shareX');
-      const gameUrl   = location.href;
-      const text = `ラスボスを倒して完全制覇しました！🎮💥 ブラウザで遊べる2Dシューティングゲーム、あなたも挑戦してみて！ #2Dシューティング #ゲーム制作`;
-      shareX.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(gameUrl)}`;
-      shareArea.style.display = 'block';
-      state = 'clear';
+      slowClearFn = () => {
+        playSound('clear');
+        showOverlay('🎉 ゲームクリア！', 'ラスボスを倒した！\n完全制覇おめでとうございます！', 'もう一度遊ぶ');
+        const shareArea = document.getElementById('shareArea');
+        const shareX    = document.getElementById('shareX');
+        const gameUrl   = location.href;
+        const text = `ラスボスを倒して完全制覇しました！🎮💥 ブラウザで遊べる2Dシューティングゲーム、あなたも挑戦してみて！ #2Dシューティング #ゲーム制作`;
+        shareX.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(gameUrl)}`;
+        shareArea.style.display = 'block';
+        state = 'clear';
+      };
     }
   }
+
+  /* パーティクル更新（playing中） */
+  for(const p of particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.92;
+    p.vy *= 0.92;
+    p.life -= p.decay;
+  }
+  particles = particles.filter(p => p.life > 0);
 
   updateHUD();
 }
@@ -931,6 +980,23 @@ function bounceCircleRect(e, r, b) {
       if(overlapX < overlapY) e.vx = -e.vx;
       else e.vy = -e.vy;
     }
+  }
+}
+
+/* ─── パーティクル ─── */
+function spawnParticles(x, y, color, count, speed) {
+  for(let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+    const spd   = speed * (0.6 + Math.random() * 0.8);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      r: 4 + Math.random() * 4,
+      life: 1.0,   // 1.0 → 0.0 でフェードアウト
+      decay: 0.04 + Math.random() * 0.03,
+      color,
+    });
   }
 }
 
@@ -1101,6 +1167,17 @@ function draw() {
   ctx.fillStyle = '#b71c1c';
   ctx.fillRect(PLAYER_R-4, -4, 14, 8);
   ctx.restore();
+
+  /* パーティクル */
+  for(const p of particles) {
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 
@@ -1177,7 +1254,7 @@ initStage(0);
 const startMsg = isMobile()
   ? '左タッチ：移動\n右タッチ：照準・離して発射\n敵（青）を全滅させよう！'
   : 'WASDで移動\nマウスで照準・クリックでビーム発射\n敵（青）を全滅させよう！';
-showOverlay('2Dシューティング', startMsg, 'ゲームスタート');
+showOverlay('SHOOTING360', startMsg, 'ゲームスタート');
 state = 'title';
 loop();
 </script>
