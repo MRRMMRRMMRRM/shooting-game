@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>2Dシューティングゲーム</title>
+<title>BURN OR DEFEND</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -128,6 +128,7 @@
   <div id="overlay">
     <h2 id="overlayTitle"></h2>
     <p id="overlayMsg"></p>
+    <ul id="overlayRules" style="display:none; text-align:left; margin: 0 0 20px 0; padding-left:20px; color:#ddd; font-size:14px; line-height:2;"></ul>
     <button id="overlayBtn">スタート</button>
     <div id="shareArea" style="display:none; margin-top:16px;">
       <a id="shareX" href="#" target="_blank" rel="noopener"
@@ -382,10 +383,12 @@ const STAGES = [
 
 /* ─── ゲーム状態 ─── */
 let stage = 0;
-let state = 'title'; // title | playing | clear | over | boss
+let state = 'title'; // title | tutorial | rules | playing | clear | over | boss
+let tutPhase = 0;    // チュートリアルフェーズ (1=移動, 2=射撃)
+let tutGoalReached = false; // フェーズ1ゴール到達フラグ
 let player, enemies, blocks, beams, particles;
-let slowTimer = 0; // スローモーション残りフレーム数
-let slowClearFn = null; // スロー終了後に呼ぶ処理
+let slowTimer = 0;
+let slowClearFn = null;
 let keys = {};
 let mouseX = W/2, mouseY = H/2;
 let timeLeft, timerInterval;
@@ -635,7 +638,7 @@ function startTimer() {
 }
 
 /* ─── 入力 ─── */
-document.addEventListener('keydown', e => { keys[e.key] = true; });
+document.addEventListener('keydown', e => { keys[e.key] = true; startFromTitle(); });
 document.addEventListener('keyup',   e => { keys[e.key] = false; });
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
@@ -643,7 +646,8 @@ canvas.addEventListener('mousemove', e => {
   mouseY = (e.clientY - r.top)  / scale;
 });
 canvas.addEventListener('click', () => {
-  if(state !== 'playing') return;
+  startFromTitle();
+  if(state !== 'playing' && state !== 'tutorial') return;
   fireBeam();
 });
 
@@ -664,6 +668,12 @@ function showJoystick() {
     document.getElementById('hint').style.display = 'none';
   }
 }
+
+/* タイトル画面でのタッチ開始 */
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  startFromTitle();
+}, {passive: false});
 
 /* ジョイスティック操作 */
 joystickBase.addEventListener('touchstart', e => {
@@ -1399,10 +1409,249 @@ function draw() {
 
 
 
+/* ─── チュートリアル ─── */
+
+// フェーズ1：通路を移動してゴールへ
+// 通路：画面左端付近スタート → 右のゴールゾーンへ
+// 上下を壁（木）で挟んだ狭い通路
+
+function initTutorial(phase) {
+  tutPhase = phase;
+  tutGoalReached = false;
+  enemies = [];
+  beams   = [];
+  particles = [];
+
+  if(phase === 1) {
+    // フェーズ1：狭い通路、移動のみ
+    player = { x: 80, y: H/2, angle: 0, bodyAngle: 0 };
+    // 上下の壁（木）で通路を作る（通路幅約120px）
+    blocks = [];
+    const wallY_top    = H/2 - 80;  // 通路上端
+    const wallY_bottom = H/2 + 80;  // 通路下端
+    // 上壁
+    for(let x = 0; x <= W - BS; x += BS) {
+      blocks.push({x, y: 0,           w: BS, h: wallY_top,         alive: true, isTutWall: true});
+    }
+    // 下壁
+    for(let x = 0; x <= W - BS; x += BS) {
+      blocks.push({x, y: wallY_bottom, w: BS, h: H - wallY_bottom,  alive: true, isTutWall: true});
+    }
+  } else {
+    // フェーズ2：前方を塞ぐ木を撃って破壊
+    player = { x: 100, y: H/2, angle: 0, bodyAngle: 0 };
+    blocks = [];
+    const wallY_top    = H/2 - 80;
+    const wallY_bottom = H/2 + 80;
+    // 上壁
+    for(let x = 0; x <= W - BS; x += BS) {
+      blocks.push({x, y: 0,            w: BS, h: wallY_top,        alive: true, isTutWall: true});
+    }
+    // 下壁
+    for(let x = 0; x <= W - BS; x += BS) {
+      blocks.push({x, y: wallY_bottom, w: BS, h: H - wallY_bottom, alive: true, isTutWall: true});
+    }
+    // 通路を塞ぐ木（撃ち抜く対象）
+    const blockX = 420;
+    for(let y = wallY_top; y < wallY_bottom; y += BS) {
+      blocks.push({x: blockX, y, w: BS, h: BS, alive: true, isTutTarget: true});
+    }
+  }
+}
+
+function updateTutorial() {
+  // プレイヤー移動
+  const spd = PLAYER_SPEED;
+  let moveX = 0, moveY = 0;
+  if(keys['w']||keys['W']||keys['ArrowUp'])    moveY -= 1;
+  if(keys['s']||keys['S']||keys['ArrowDown'])  moveY += 1;
+  if(keys['a']||keys['A']||keys['ArrowLeft'])  moveX -= 1;
+  if(keys['d']||keys['D']||keys['ArrowRight']) moveX += 1;
+  if(joyActive) { moveX += joyDx; moveY += joyDy; }
+  if(moveX !== 0 || moveY !== 0) {
+    const len = Math.sqrt(moveX*moveX + moveY*moveY);
+    player.x = Math.max(PLAYER_R, Math.min(W-PLAYER_R, player.x + (moveX/len)*spd));
+    player.y = Math.max(PLAYER_R, Math.min(H-PLAYER_R, player.y + (moveY/len)*spd));
+    player.bodyAngle = Math.atan2(moveY, moveX);
+  }
+  player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+
+  // ブロックとのめり込み補正
+  for(const b of blocks) {
+    if(!b.alive) continue;
+    resolveCircleRect(player, PLAYER_R, b);
+  }
+
+  // ビーム更新（フェーズ2のみ）
+  if(tutPhase === 2) {
+    for(const beam of beams) {
+      if(!beam.alive) continue;
+      beam.x += beam.vx;
+      beam.y += beam.vy;
+      if(beam.x<0||beam.x>W||beam.y<0||beam.y>H) { beam.alive=false; continue; }
+      for(const b of blocks) {
+        if(!b.alive || b.isTutWall) continue;
+        if(rectContains(b, beam.x, beam.y)) {
+          b.alive = false;
+          beam.alive = false;
+          playSound('block');
+          spawnFireParticles(beam.x, beam.y);
+          break;
+        }
+      }
+    }
+    beams = beams.filter(b=>b.alive);
+  }
+
+  // パーティクル更新
+  for(const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.92; p.vy *= 0.92;
+    p.life -= p.decay;
+  }
+  particles = particles.filter(p => p.life > 0);
+
+  // フェーズ1：ゴール判定（右端付近に到達）
+  if(tutPhase === 1 && player.x > W - 120) {
+    tutGoalReached = true;
+    // 少し待ってフェーズ2へ
+    setTimeout(() => {
+      initTutorial(2);
+    }, 800);
+  }
+
+  // フェーズ2：全ターゲット破壊でステージ1へ
+  if(tutPhase === 2) {
+    const targets = blocks.filter(b => b.isTutTarget);
+    if(targets.length > 0 && targets.every(b => !b.alive)) {
+      setTimeout(() => {
+        showRulesOverlay();
+      }, 800);
+      tutPhase = 0; // 二重発火防止
+    }
+  }
+}
+
+function drawTutorial() {
+  // 通常のゲーム描画を流用
+  draw();
+
+  // ゴールゾーン表示（フェーズ1）
+  if(tutPhase === 1) {
+    ctx.save();
+    ctx.strokeStyle = tutGoalReached ? '#69f0ae' : '#ffd700';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(W - 120, H/2 - 80);
+    ctx.lineTo(W - 120, H/2 + 80);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = tutGoalReached ? 'rgba(105,240,174,0.15)' : 'rgba(255,215,0,0.1)';
+    ctx.fillRect(W - 120, H/2 - 80, 120, 160);
+    ctx.fillStyle = tutGoalReached ? '#69f0ae' : '#ffd700';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GOAL', W - 60, H/2);
+    ctx.restore();
+  }
+
+  // 指示テキスト
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  // 上部バー
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, 56);
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('TUTORIAL', W/2, 8);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '15px sans-serif';
+  if(tutPhase === 1) {
+    ctx.fillText('WASD（または矢印キー）で戦車を移動させよう！　→　ゴールに到達せよ', W/2, 28);
+  } else if(tutPhase === 2) {
+    ctx.fillText('マウスで照準を合わせ、クリックでビームを発射！　→　前方の木を破壊せよ', W/2, 28);
+  }
+
+  ctx.restore();
+}
+
+/* ─── タイトル画面描画 ─── */
+let titleBlink = 0; // 点滅カウンター
+
+function drawTitle() {
+  // 背景
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // 星屑
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  const stars = [
+    [80,60],[200,30],[400,90],[600,20],[750,70],[850,40],
+    [150,150],[350,180],[550,130],[700,160],[880,100],
+    [50,250],[300,280],[480,220],[660,270],[820,230],
+    [100,380],[250,350],[450,400],[630,370],[800,330],
+    [30,450],[370,480],[580,460],[720,490],[870,440],
+  ];
+  stars.forEach(([x,y]) => {
+    ctx.beginPath();
+    ctx.arc(x, y, 1 + Math.random()*0.5, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // タイトルロゴ「BURN OR DEFEND」
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // BURNの炎色グラデーション
+  const grad = ctx.createLinearGradient(W/2 - 200, 0, W/2 + 200, 0);
+  grad.addColorStop(0,   '#ff1744');
+  grad.addColorStop(0.4, '#ff9100');
+  grad.addColorStop(0.6, '#ffd600');
+  grad.addColorStop(1,   '#ff6d00');
+
+  ctx.shadowColor = '#ff6d00';
+  ctx.shadowBlur = 30;
+  ctx.font = 'bold 72px sans-serif';
+  ctx.fillStyle = grad;
+  ctx.fillText('BURN OR DEFEND', W/2, H/2 - 60);
+
+  // サブタイトル
+  ctx.shadowBlur = 0;
+  ctx.font = '16px sans-serif';
+  ctx.fillStyle = 'rgba(180,180,255,0.85)';
+  ctx.fillText('宇宙モンスターから地球の森を守れ', W/2, H/2 + 10);
+
+  // PRESS ANY BUTTON（点滅）
+  titleBlink++;
+  if(Math.floor(titleBlink / 30) % 2 === 0) {
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 10;
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('PRESS ANY BUTTON', W/2, H/2 + 90);
+  }
+
+  ctx.restore();
+}
+
 /* ─── ゲームループ ─── */
 function loop() {
-  update();
-  draw();
+  if(state === 'title') {
+    drawTitle();
+  } else if(state === 'tutorial') {
+    updateTutorial();
+    drawTutorial();
+  } else {
+    update();
+    draw();
+  }
   animId = requestAnimationFrame(loop);
 }
 
@@ -1417,20 +1666,49 @@ function showOverlay(title, msg, btnLabel) {
 function hideOverlay() {
   overlay.style.display = 'none';
   document.getElementById('shareArea').style.display = 'none';
+  document.getElementById('overlayRules').style.display = 'none';
+}
+
+function showRulesOverlay() {
+  const rules = [
+    '🛸 宇宙モンスターを全滅させるとステージクリア',
+    '💥 モンスターに触れるとゲームオーバー',
+    '🌀 モンスターが画面外に逃げると、2倍になって戻ってくる！',
+    '🌲 ビームが木に当たると炎上する（なるべく外さないで！）',
+    '🪵 木はモンスターを跳ね返す壁にもなる（うまく活用しよう）',
+    '👾 ステージが進むと強敵（HP3）が登場する',
+  ];
+  const ul = document.getElementById('overlayRules');
+  ul.innerHTML = rules.map(r => `<li>${r}</li>`).join('');
+  ul.style.display = 'block';
+  overlayTitle.textContent = 'ゲームルール';
+  overlayMsg.textContent   = 'チュートリアル完了！本編を始める前に確認しよう。';
+  overlayBtn.textContent   = 'ステージ１へ！';
+  overlay.style.display    = 'block';
+  state = 'rules';
+}
+
+/* ─── タイトル画面：任意入力でチュートリアル開始 ─── */
+function startFromTitle() {
+  if(state !== 'title') return;
+  audioCtx.resume();
+  showJoystick();
+  initTutorial(1);
+  state = 'tutorial';
 }
 
 /* ─── イベント ─── */
 overlayBtn.addEventListener('click', () => {
   audioCtx.resume();
   showJoystick();
-  if(state === 'title') {
+  if(state === 'rules') {
+    // ルール確認後にステージ1へ
     stage = 0;
-    initStage(stage);
+    initStage(0);
     hideOverlay();
     state = 'playing';
     startTimer();
   } else if(state === 'over') {
-    // ゲームオーバーになったステージからリトライ
     if(stage === BOSS_STAGE) {
       initBossStage();
     } else {
@@ -1441,7 +1719,6 @@ overlayBtn.addEventListener('click', () => {
     startTimer();
   } else if(state === 'clear') {
     if(stage === BOSS_STAGE) {
-      // ボスステージ開始
       hideOverlay();
       state = 'playing';
       startTimer();
@@ -1467,11 +1744,6 @@ function triggerGameOver(reason) {
 }
 
 /* ─── 起動 ─── */
-initStage(0);
-const startMsg = isMobile()
-  ? '左タッチ：移動\n右タッチ：照準・離して発射\n敵（青）を全滅させよう！'
-  : 'WASDで移動\nマウスで照準・クリックでビーム発射\n敵（青）を全滅させよう！';
-showOverlay('SHOOTING360', startMsg, 'ゲームスタート');
 state = 'title';
 loop();
 </script>
