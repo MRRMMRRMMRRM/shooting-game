@@ -2,7 +2,7 @@
 
 **ブラウザで即プレイできる全方位2Dシューティングゲーム**
 
-👉 **[今すぐプレイする](https://MRRMMRRRMMRRM.github.io/shooting-game/)**
+👉 **[今すぐプレイする](https://mrrmmrrmmrrm.github.io/shooting-game/)**
 
 ---
 
@@ -79,7 +79,7 @@
 ## 🚀 ローカルで動かす方法
 
 ```bash
-git clone https://github.com/MRRMMRRRMMRRM/shooting-game.git
+git clone https://github.com/MRRMMRRMMRRM/shooting-game.git
 cd shooting-game
 # index.html をブラウザで開くだけでOK
 open index.html
